@@ -58,6 +58,19 @@ export default function IntroSequence({ onHeroReady }: { onHeroReady: (instant: 
     fireReady(true);
   }, [fireReady]);
 
+  // Autoplay refused (iOS Low Power Mode, data saver): show poster-2 and keep the backdrop video
+  // mounted so the revive effect can start it on the first touch.
+  const fallbackToLoop = useCallback(() => {
+    setMode("loop");
+    dispatch("settle");
+    fireReady(true);
+    const el = v2.current;
+    if (el) {
+      el.src = videoSrc(2, hi.current);
+      el.play().catch(() => {});
+    }
+  }, [fireReady]);
+
   // video 2 under video 1: attach the source only once video 1 is buffered so they never compete
   const loadV2 = useCallback(() => {
     const el = v2.current;
@@ -84,20 +97,23 @@ export default function IntroSequence({ onHeroReady }: { onHeroReady: (instant: 
       const el = v2.current;
       if (el) {
         el.src = videoSrc(2, hi.current);
-        el.play().catch((e) => { if (e?.name === "NotAllowedError") setMode("poster"); });
+        el.play().catch(() => {}); // blocked: the revive effect retries on first touch
       }
       return;
     }
 
     const el = v1.current;
     if (!el) return;
+    // React does not reliably emit the muted attribute; iOS needs it for autoplay
+    el.muted = true;
+    el.setAttribute("muted", "");
     el.src = videoSrc(1, hi.current);
-    const timeout = setTimeout(skipToPoster, START_TIMEOUT_MS); // never started: do not strand the user
+    const timeout = setTimeout(fallbackToLoop, START_TIMEOUT_MS); // never started: do not strand the user
     const started = () => clearTimeout(timeout);
     el.addEventListener("playing", started, { once: true });
-    el.play().catch(() => { clearTimeout(timeout); skipToPoster(); }); // autoplay blocked
+    el.play().catch(() => { clearTimeout(timeout); fallbackToLoop(); }); // autoplay blocked
     return () => { clearTimeout(timeout); el.removeEventListener("playing", started); };
-  }, [skipToPoster, fireReady]);
+  }, [skipToPoster, fireReady, fallbackToLoop]);
 
   // ── handoff ─────────────────────────────────────────────────────────────
   const onEnded1 = useCallback(() => {
@@ -113,7 +129,7 @@ export default function IntroSequence({ onHeroReady }: { onHeroReady: (instant: 
     }
     el.currentTime = 0;
     const grace = setTimeout(() => fireReady(false), HANDOFF_GRACE_MS);
-    el.play().catch(() => { clearTimeout(grace); fireReady(true); dispatch("settle"); });
+    el.play().catch(() => { clearTimeout(grace); fireReady(true); dispatch("settle"); setMode("loop"); });
   }, [fireReady, loadV2]);
 
   const onPlaying2 = useCallback(() => {
@@ -150,7 +166,11 @@ export default function IntroSequence({ onHeroReady }: { onHeroReady: (instant: 
     const t = setInterval(revive, 1000);
     document.addEventListener("visibilitychange", revive);
     window.addEventListener("pageshow", revive);
+    // iOS Low Power Mode only allows play() inside a user gesture
+    const gestures = ["touchend", "pointerup", "click"] as const;
+    gestures.forEach((e) => window.addEventListener(e, revive, { passive: true }));
     return () => {
+      gestures.forEach((e) => window.removeEventListener(e, revive));
       clearInterval(t);
       document.removeEventListener("visibilitychange", revive);
       window.removeEventListener("pageshow", revive);

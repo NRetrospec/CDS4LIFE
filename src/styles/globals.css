@@ -53,6 +53,13 @@ body {
   .intro-poster-2 { display: block; }
 }
 
+/* Never show the native iOS play button / controls on the backdrop videos. */
+.intro-video { pointer-events: none; }
+.intro-video::-webkit-media-controls,
+.intro-video::-webkit-media-controls-start-playback-button,
+.intro-video::-webkit-media-controls-overlay-play-button,
+.intro-video::-webkit-media-controls-panel { display: none !important; -webkit-appearance: none; opacity: 0; }
+
 /* Contact bar blends into the video: gradient, not a flat fill (client spec). */
 .contact-bar {
   background: linear-gradient(to top, rgba(0,25,52,0.72) 0%, rgba(0,25,52,0.45) 55%, rgba(0,25,52,0) 100%);
